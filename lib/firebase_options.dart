@@ -9,7 +9,7 @@ import 'package:flutter/foundation.dart'
 /// Example:
 /// ```dart
 /// import 'firebase_options.dart';
-/// // ...
+/// // ... existing code ...
 /// await Firebase.initializeApp(
 ///   options: DefaultFirebaseOptions.currentPlatform,
 /// );
@@ -21,30 +21,15 @@ class DefaultFirebaseOptions {
     }
     switch (defaultTargetPlatform) {
       case TargetPlatform.android:
-        throw UnsupportedError(
-          'DefaultFirebaseOptions have not been configured for android - '
-          'you can reconfigure this by running the FlutterFire CLI again.',
-        );
+        return android;
       case TargetPlatform.iOS:
-        throw UnsupportedError(
-          'DefaultFirebaseOptions have not been configured for ios - '
-          'you can reconfigure this by running the FlutterFire CLI again.',
-        );
+        return ios;
       case TargetPlatform.macOS:
-        throw UnsupportedError(
-          'DefaultFirebaseOptions have not been configured for macos - '
-          'you can reconfigure this by running the FlutterFire CLI again.',
-        );
+        return macos;
       case TargetPlatform.windows:
-        throw UnsupportedError(
-          'DefaultFirebaseOptions have not been configured for windows - '
-          'you can reconfigure this by running the FlutterFire CLI again.',
-        );
+        return windows;
       case TargetPlatform.linux:
-        throw UnsupportedError(
-          'DefaultFirebaseOptions have not been configured for linux - '
-          'you can reconfigure this by running the FlutterFire CLI again.',
-        );
+        return linux;
       default:
         throw UnsupportedError(
           'DefaultFirebaseOptions are not supported for this platform.',
@@ -53,13 +38,61 @@ class DefaultFirebaseOptions {
   }
 
   static const FirebaseOptions web = FirebaseOptions(
-    apiKey: 'AIzaSyBxcZwxKwxljV5_89RkCwjoyGDNKE3qX5M',
-    appId: '1:901122649084:web:b7130009ee032432382079',
-    messagingSenderId: '901122649084',
-    projectId: 'smart-ai-finance-tracker-app',
-    authDomain: 'smart-ai-finance-tracker-app.firebaseapp.com',
-    databaseURL: 'https://smart-ai-finance-tracker-app-default-rtdb.asia-southeast1.firebasedatabase.app',
-    storageBucket: 'smart-ai-finance-tracker-app.firebasestorage.app',
+    apiKey: 'AIzaSyBs71dyUoKH02cE__qs55w8HdyRhHZyzyk',
+    appId: '1:690202805848:web:f6fd01e8f82c6f79506c2d',
+    messagingSenderId: '690202805848',
+    projectId: 'smart-ai-finance-tracker',
+    authDomain: 'smart-ai-finance-tracker.firebaseapp.com',
+    databaseURL: 'https://smart-ai-finance-tracker-default-rtdb.firebaseio.com',
+    storageBucket: 'smart-ai-finance-tracker.firebasestorage.app',
   );
 
+  static const FirebaseOptions android = FirebaseOptions(
+    apiKey: 'AIzaSyBs71dyUoKH02cE__qs55w8HdyRhHZyzyk',
+    appId: '1:690202805848:android:35f0681a2fee8442506c2d',
+    messagingSenderId: '690202805848',
+    projectId: 'smart-ai-finance-tracker',
+    databaseURL: 'https://smart-ai-finance-tracker-default-rtdb.firebaseio.com',
+    storageBucket: 'smart-ai-finance-tracker.firebasestorage.app',
+  );
+
+  static const FirebaseOptions ios = FirebaseOptions(
+    apiKey: 'AIzaSyCtPYrMf-p0e8aRqLeeLGHx8yd6GpJWWtc',
+    appId: '1:690202805848:ios:43c5e5f97c1c8479506c2d',
+    messagingSenderId: '690202805848',
+    projectId: 'smart-ai-finance-tracker',
+    databaseURL: 'https://smart-ai-finance-tracker-default-rtdb.firebaseio.com',
+    storageBucket: 'smart-ai-finance-tracker.firebasestorage.app',
+    iosClientId: '690202805848-hkocv6jvc0tts3r7sqbt18lsomva31rq.apps.googleusercontent.com',
+    iosBundleId: 'com.example.smartAi',
+  );
+
+  static const FirebaseOptions macos = FirebaseOptions(
+    apiKey: 'AIzaSyCtPYrMf-p0e8aRqLeeLGHx8yd6GpJWWtc',
+    appId: '1:690202805848:macos:YOUR_MACOS_APP_ID',
+    messagingSenderId: '690202805848',
+    projectId: 'smart-ai-finance-tracker',
+    databaseURL: 'https://smart-ai-finance-tracker-default-rtdb.firebaseio.com',
+    storageBucket: 'smart-ai-finance-tracker.firebasestorage.app',
+    iosClientId: '690202805848-hkocv6jvc0tts3r7sqbt18lsomva31rq.apps.googleusercontent.com',
+    iosBundleId: 'com.example.smartAi',
+  );
+
+  static const FirebaseOptions windows = FirebaseOptions(
+    apiKey: 'AIzaSyBs71dyUoKH02cE__qs55w8HdyRhHZyzyk',
+    appId: '1:690202805848:windows:YOUR_WINDOWS_APP_ID',
+    messagingSenderId: '690202805848',
+    projectId: 'smart-ai-finance-tracker',
+    databaseURL: 'https://smart-ai-finance-tracker-default-rtdb.firebaseio.com',
+    storageBucket: 'smart-ai-finance-tracker.firebasestorage.app',
+  );
+
+  static const FirebaseOptions linux = FirebaseOptions(
+    apiKey: 'AIzaSyBs71dyUoKH02cE__qs55w8HdyRhHZyzyk',
+    appId: '1:690202805848:linux:YOUR_LINUX_APP_ID',
+    messagingSenderId: '690202805848',
+    projectId: 'smart-ai-finance-tracker',
+    databaseURL: 'https://smart-ai-finance-tracker-default-rtdb.firebaseio.com',
+    storageBucket: 'smart-ai-finance-tracker.firebasestorage.app',
+  );
 }

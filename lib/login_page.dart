@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_core/firebase_core.dart';
+// Removed unused import
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
-import 'package:flutter_facebook_auth/flutter_facebook_auth.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import 'dart:math' as math;
 
@@ -15,7 +15,7 @@ class LoginPage extends StatefulWidget {
   _LoginPageState createState() => _LoginPageState();
 }
 
-class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMixin {
+class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   bool isLogin = true;
@@ -23,35 +23,38 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
   // Toggle which providers are clickable to avoid runtime config errors
   // Set to true after enabling each provider in Firebase Console
   static const bool _googleEnabled = true;
-  static const bool _facebookEnabled = false;
-  static const bool _appleEnabled = false;
+  static const bool _appleEnabled = true;
   static const bool _anonymousEnabled = true;
 
   late final AnimationController _bgController;
-  late final List<_FlyingSpec> _flyingSpecs;
+  late final AnimationController _particleController;
+  late final AnimationController _waveController;
+  late final List<_Particle> _particles;
+  late final List<_Wave> _waves;
 
   Future<void> _authenticate() async {
     try {
       final auth = FirebaseAuth.instance;
+      UserCredential? userCredential;
+      
       if (isLogin) {
-        await auth.signInWithEmailAndPassword(
+        userCredential = await auth.signInWithEmailAndPassword(
           email: _emailController.text.trim(),
           password: _passwordController.text.trim(),
         );
+        
+        // Update last sign-in time for existing users
+        if (userCredential.user != null) {
+          await _saveUserToDatabase(userCredential.user!, isUpdate: true);
+        }
       } else {
-        final userCredential = await auth.createUserWithEmailAndPassword(
+        userCredential = await auth.createUserWithEmailAndPassword(
           email: _emailController.text.trim(),
           password: _passwordController.text.trim(),
         );
-        // Only write to Realtime Database if a databaseURL is configured
-        final app = Firebase.app();
-        final databaseUrl = app.options.databaseURL;
-        if (databaseUrl != null && databaseUrl.isNotEmpty) {
-          final database = FirebaseDatabase.instanceFor(app: app, databaseURL: databaseUrl);
-          await database.ref("users/${userCredential.user!.uid}").set({
-            "email": _emailController.text.trim(),
-            "createdAt": DateTime.now().toIso8601String(),
-          });
+        // Save new user to database
+        if (userCredential.user != null) {
+          await _saveUserToDatabase(userCredential.user!, isUpdate: false);
         }
       }
     } catch (e) {
@@ -67,7 +70,12 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
 
   Future<void> _signInAnonymously() async {
     try {
-      await FirebaseAuth.instance.signInAnonymously();
+      final userCredential = await FirebaseAuth.instance.signInAnonymously();
+      
+      // Save guest user to database
+      if (userCredential.user != null) {
+        await _saveGuestUserToDatabase(userCredential.user!);
+      }
     } catch (e) {
       if (!mounted) return;
       String message = e.toString();
@@ -81,10 +89,12 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
   Future<void> _signInWithGoogle() async {
     try {
       final auth = FirebaseAuth.instance;
+      UserCredential? userCredential;
+      
       if (kIsWeb) {
         final googleProvider = GoogleAuthProvider();
         try {
-          await auth.signInWithPopup(googleProvider);
+          userCredential = await auth.signInWithPopup(googleProvider);
         } on FirebaseAuthException catch (e) {
           // If the browser blocks popups or the popup was closed, try redirect
           if (e.code == 'popup-blocked' || e.code == 'popup-closed-by-user') {
@@ -101,7 +111,12 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
           accessToken: googleAuth.accessToken,
           idToken: googleAuth.idToken,
         );
-        await auth.signInWithCredential(credential);
+        userCredential = await auth.signInWithCredential(credential);
+      }
+      
+      // Save Google user data to database
+      if (userCredential.user != null) {
+        await _saveGoogleUserToDatabase(userCredential);
       }
     } catch (e) {
       if (!mounted) return;
@@ -113,54 +128,78 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
     }
   }
 
-  Future<void> _signInWithFacebook() async {
-    try {
-      final auth = FirebaseAuth.instance;
-      if (kIsWeb) {
-        final provider = FacebookAuthProvider();
-        await auth.signInWithPopup(provider);
-      } else {
-        final LoginResult result = await FacebookAuth.instance.login();
-        if (result.status != LoginStatus.success || result.accessToken == null) return;
-        final credential = FacebookAuthProvider.credential(result.accessToken!.token);
-        await auth.signInWithCredential(credential);
-      }
-    } catch (e) {
-      if (!mounted) return;
-      String message = e.toString();
-      if (e is FirebaseAuthException && (e.code == 'operation-not-allowed' || e.code == 'configuration-not-found')) {
-        message = 'Facebook sign-in not configured. Enable Facebook provider and set App ID/Secret in Firebase Console.';
-      }
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
-    }
-  }
+
 
   Future<void> _signInWithApple() async {
     try {
       final auth = FirebaseAuth.instance;
       if (kIsWeb) {
         final appleProvider = AppleAuthProvider();
-        await auth.signInWithPopup(appleProvider);
+        try {
+          await auth.signInWithPopup(appleProvider);
+        } on FirebaseAuthException catch (e) {
+          // If the browser blocks popups or the popup was closed, try redirect
+          if (e.code == 'popup-blocked' || e.code == 'popup-closed-by-user') {
+            await auth.signInWithRedirect(appleProvider);
+            return;
+          }
+          rethrow;
+        }
       } else {
+        // For mobile platforms
         final appleIdCredential = await SignInWithApple.getAppleIDCredential(
           scopes: [
             AppleIDAuthorizationScopes.email,
             AppleIDAuthorizationScopes.fullName,
           ],
         );
+        
+        if (appleIdCredential.identityToken == null) {
+          throw Exception('Apple Sign-In failed: No identity token received');
+        }
+        
         final oauthCredential = OAuthProvider("apple.com").credential(
           idToken: appleIdCredential.identityToken,
           accessToken: appleIdCredential.authorizationCode,
         );
+        
         await auth.signInWithCredential(oauthCredential);
       }
     } catch (e) {
       if (!mounted) return;
       String message = e.toString();
-      if (e is FirebaseAuthException && (e.code == 'operation-not-allowed' || e.code == 'configuration-not-found')) {
-        message = 'Apple sign-in not configured. Enable Apple provider and set Services ID/keys in Firebase Console.';
+      
+      if (e is FirebaseAuthException) {
+        switch (e.code) {
+          case 'operation-not-allowed':
+            message = 'Apple Sign-In not enabled. Enable it in Firebase Console → Authentication → Sign-in method.';
+            break;
+          case 'configuration-not-found':
+            message = 'Apple Sign-In not configured. Set up Apple provider in Firebase Console.';
+            break;
+          case 'user-disabled':
+            message = 'This account has been disabled.';
+            break;
+          case 'invalid-credential':
+            message = 'Invalid Apple Sign-In credentials.';
+            break;
+          case 'web-storage-unsupported':
+            message = 'Apple Sign-In requires web storage support. Please enable cookies.';
+            break;
+          default:
+            message = 'Apple Sign-In failed: ${e.message}';
+        }
+      } else if (e.toString().contains('SignInWithApple')) {
+        message = 'Apple Sign-In was cancelled or failed. Please try again.';
+      } else if (e.toString().contains('operation-not-allowed')) {
+        message = 'Apple Sign-In is not enabled in Firebase Console. Please enable it in Authentication → Sign-in method.';
       }
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+      
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.orange,
+        duration: const Duration(seconds: 4),
+      ));
     }
   }
 
@@ -169,43 +208,77 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
     _emailController.dispose();
     _passwordController.dispose();
     _bgController.dispose();
+    _particleController.dispose();
+    _waveController.dispose();
     super.dispose();
+  }
+
+  Color _getRandomColor(math.Random random) {
+    final colors = [
+      Colors.deepPurple,
+      Colors.blue,
+      Colors.teal,
+      Colors.green,
+      Colors.orange,
+      Colors.red,
+      Colors.pink,
+    ];
+    return colors[random.nextInt(colors.length)];
   }
 
   @override
   void initState() {
     super.initState();
-    _bgController = AnimationController(vsync: this, duration: const Duration(seconds: 20))
+    
+    // Initialize animation controllers
+    _bgController = AnimationController(vsync: this, duration: const Duration(seconds: 30))
       ..repeat();
+    _particleController = AnimationController(vsync: this, duration: const Duration(seconds: 20))
+      ..repeat();
+    _waveController = AnimationController(vsync: this, duration: const Duration(seconds: 15))
+      ..repeat();
+    
+    // Initialize particles
     final random = math.Random(42);
-    _flyingSpecs = List.generate(18, (index) {
-      final speed = 20 + random.nextInt(25); // seconds to cross
-      final size = 18.0 + random.nextDouble() * 22.0;
-      final verticalAnchor = random.nextDouble();
-      final amplitude = 20 + random.nextDouble() * 60;
-      final phase = random.nextDouble() * math.pi * 2;
-      final icon = index % 3 == 0
-          ? Icons.attach_money
-          : (index % 3 == 1 ? Icons.payments_rounded : Icons.savings_rounded);
-      return _FlyingSpec(
-        speedSeconds: speed.toDouble(),
-        size: size,
-        verticalAnchor: verticalAnchor,
-        amplitude: amplitude,
-        phase: phase,
-        iconData: icon,
+    _particles = List.generate(50, (index) {
+      return _Particle(
+        x: random.nextDouble() * 100,
+        y: random.nextDouble() * 100,
+        size: 2 + random.nextDouble() * 4,
+        speed: 0.5 + random.nextDouble() * 2,
+        angle: random.nextDouble() * math.pi * 2,
+        color: _getRandomColor(random),
+        type: random.nextInt(3), // 0: circle, 1: square, 2: triangle
+      );
+    });
+    
+    // Initialize waves
+    _waves = List.generate(3, (index) {
+      return _Wave(
+        amplitude: 20 + random.nextDouble() * 60,
+        frequency: 0.02 + random.nextDouble() * 0.03,
+        speed: 0.5 + random.nextDouble() * 1.5,
+        phase: random.nextDouble() * math.pi * 2,
+        color: _getRandomColor(random),
+        yOffset: 20 + index * 30,
       );
     });
 
     // Complete any pending Google sign-in redirect on Web and listen for auth changes
     if (kIsWeb) {
-      FirebaseAuth.instance.getRedirectResult().catchError((error) {
-        throw error;
+      FirebaseAuth.instance.getRedirectResult().then((userCredential) {
+        if (userCredential.user != null) {
+          // Save Google user data to database after redirect
+          _saveGoogleUserToDatabase(userCredential);
+        }
+      }).catchError((error) {
+        debugPrint("Redirect result error: $error");
       });
     }
     FirebaseAuth.instance.authStateChanges().listen((user) {
       if (!mounted || user == null) return;
       WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return; // Check again after post frame callback
         final email = user.email ?? (user.isAnonymous ? 'Guest' : 'Signed');
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Signed in as $email')),
@@ -214,46 +287,57 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
     });
   }
 
-  // Compute animated gradient colors based on time t in [0,1]
+  // Compute animated gradient colors based on time t in [0,1] - cozy warm theme
   List<Color> _animatedGradient(double t) {
     Color shift(double baseHue, double delta) {
       final hue = (baseHue + delta) % 360.0;
-      return HSLColor.fromAHSL(1.0, hue, 0.65, 0.52).toColor();
+      return HSLColor.fromAHSL(1.0, hue, 0.55, 0.45).toColor();
     }
-    final a = shift(160, t * 360);
-    final b = shift(260, (t * 360 + 60) % 360);
-    final c = shift(330, (t * 360 + 120) % 360);
+    // Warm, cozy colors: deep purples, warm oranges, soft teals
+    final a = shift(280, t * 360); // Deep purple
+    final b = shift(25, (t * 360 + 120) % 360); // Warm orange
+    final c = shift(200, (t * 360 + 240) % 360); // Soft teal
     return [a, b, c];
   }
 
-  Widget _buildFlyingLayer(BoxConstraints constraints) {
+  Widget _buildAdvancedAnimationLayer(BoxConstraints constraints) {
     final width = constraints.maxWidth;
     final height = constraints.maxHeight;
-    return AnimatedBuilder(
-      animation: _bgController,
-      builder: (context, _) {
-        final t = _bgController.value; // 0..1
-        return Stack(
-          children: _flyingSpecs.map((spec) {
-            // progress for this spec based on its own speed
-            final cycle = (t * (20.0 / (spec.speedSeconds / 20.0))) % 1.0;
-            final x = -60.0 + (width + 120.0) * cycle;
-            final y = spec.verticalAnchor * height + math.sin(cycle * math.pi * 2 + spec.phase) * spec.amplitude;
-            return Positioned(
-              left: x,
-              top: y.clamp(0.0, height - spec.size),
-              child: Opacity(
-                opacity: 0.25 + 0.35 * (0.5 + 0.5 * math.sin(cycle * math.pi * 2 + spec.phase)),
-                child: Icon(
-                  spec.iconData,
-                  size: spec.size,
-                  color: Colors.white,
-                ),
+    
+    return Stack(
+      children: [
+        // Animated particles
+        AnimatedBuilder(
+          animation: _particleController,
+          builder: (context, _) {
+            return CustomPaint(
+              size: Size(width, height),
+              painter: _ParticlePainter(
+                particles: _particles,
+                animationValue: _particleController.value,
+                width: width,
+                height: height,
               ),
             );
-          }).toList(),
-        );
-      },
+          },
+        ),
+        
+        // Animated waves
+        AnimatedBuilder(
+          animation: _waveController,
+          builder: (context, _) {
+            return CustomPaint(
+              size: Size(width, height),
+              painter: _WavePainter(
+                waves: _waves,
+                animationValue: _waveController.value,
+                width: width,
+                height: height,
+              ),
+            );
+          },
+        ),
+      ],
     );
   }
 
@@ -283,8 +367,8 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
                 },
               ),
 
-              // Floating money/finance icons layer
-              _buildFlyingLayer(constraints),
+                             // Advanced particle and wave animation layer
+               _buildAdvancedAnimationLayer(constraints),
 
               // Content card
               Center(
@@ -305,7 +389,28 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            const Icon(Icons.savings_rounded, size: 80, color: Colors.white),
+                                                         Column(
+                               children: [
+                                 const Icon(Icons.psychology, size: 60, color: Colors.white),
+                                 const SizedBox(height: 8),
+                                 const Text(
+                                   "Mo-Mo",
+                                   style: TextStyle(
+                                     fontSize: 28,
+                                     fontWeight: FontWeight.bold,
+                                     color: Colors.white,
+                                   ),
+                                 ),
+                                 Text(
+                                   "Money Monitor",
+                                   style: TextStyle(
+                                     fontSize: 14,
+                                     color: Colors.white70,
+                                     fontStyle: FontStyle.italic,
+                                   ),
+                                 ),
+                               ],
+                             ),
                             const SizedBox(height: 16),
                             Text(
                               isLogin ? "Welcome Back" : "Create Account",
@@ -384,36 +489,31 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
                               ],
                             ),
                             const SizedBox(height: 10),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                _SocialCircleButton(
-                                  emoji: '🌐',
-                                  enabled: _googleEnabled,
-                                  onPressed: _signInWithGoogle,
-                                  semanticsLabel: 'Sign in with Google',
-                                ),
-                                const SizedBox(width: 12),
-                                _SocialCircleButton(
-                                  emoji: '📘',
-                                  enabled: _facebookEnabled,
-                                  onPressed: _signInWithFacebook,
-                                  semanticsLabel: 'Sign in with Facebook',
-                                ),
-                                const SizedBox(width: 12),
-                                _SocialCircleButton(
-                                  emoji: '🍎',
-                                  enabled: _appleEnabled,
-                                  onPressed: _signInWithApple,
-                                  semanticsLabel: 'Sign in with Apple',
-                                ),
-                              ],
-                            ),
+                              Row(
+                               mainAxisAlignment: MainAxisAlignment.center,
+                               children: [
+                                  _SocialCircleButton(
+                                    icon: FontAwesomeIcons.google,
+                                   enabled: _googleEnabled,
+                                   onPressed: _signInWithGoogle,
+                                   semanticsLabel: 'Sign in with Google',
+                                    color: Colors.white,
+                                 ),
+                                 const SizedBox(width: 12),
+                                 _SocialCircleButton(
+                                    icon: FontAwesomeIcons.apple,
+                                   enabled: _appleEnabled,
+                                   onPressed: _signInWithApple,
+                                   semanticsLabel: 'Sign in with Apple',
+                                   color: Colors.white,
+                                 ),
+                               ],
+                             ),
                             const SizedBox(height: 8),
-                            TextButton(
-                              onPressed: _anonymousEnabled ? _signInAnonymously : null,
-                              child: const Text('🚪 Continue without an account', style: TextStyle(color: Colors.white)),
-                            ),
+                                                         TextButton(
+                               onPressed: _anonymousEnabled ? _signInAnonymously : null,
+                               child: const Text('Continue without an account', style: TextStyle(color: Colors.white)),
+                             ),
                             TextButton(
                               onPressed: () => setState(() => isLogin = !isLogin),
                               child: Text(
@@ -434,37 +534,208 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
       },
     );
   }
+  
+  // Helper method to save user data to database
+  Future<void> _saveUserToDatabase(User user, {required bool isUpdate}) async {
+    try {
+      // Use default instance to avoid multiple database initializations
+      final database = FirebaseDatabase.instance;
+      if (isUpdate) {
+          // Update last sign-in time for existing users
+          await database.ref("users/${user.uid}/lastSignIn").set(
+            DateTime.now().toIso8601String(),
+          );
+        } else {
+          // Save new user data
+          await database.ref("users/${user.uid}").set({
+            "email": user.email,
+            "displayName": user.email?.split('@')[0] ?? "User",
+            "isEmailUser": true,
+            "createdAt": DateTime.now().toIso8601String(),
+            "lastSignIn": DateTime.now().toIso8601String(),
+          });
+        }
+    } catch (e) {
+      debugPrint("Error saving user to database: $e");
+    }
+  }
+
+  // Helper method to save guest user data to database
+  Future<void> _saveGuestUserToDatabase(User user) async {
+    try {
+      final database = FirebaseDatabase.instance;
+      await database.ref("users/${user.uid}").set({
+          "email": "guest@anonymous.com",
+          "displayName": "Guest User",
+          "isGuest": true,
+          "createdAt": DateTime.now().toIso8601String(),
+        });
+    } catch (e) {
+      debugPrint("Error saving guest user to database: $e");
+    }
+  }
+
+  // Helper method to save Google user data to database
+  Future<void> _saveGoogleUserToDatabase(UserCredential userCredential) async {
+    try {
+      final database = FirebaseDatabase.instance;
+      await database.ref("users/${userCredential.user!.uid}").set({
+          "email": userCredential.user!.email,
+          "displayName": userCredential.user!.displayName ?? "Google User",
+          "photoURL": userCredential.user!.photoURL,
+          "isGoogleUser": true,
+          "lastSignIn": DateTime.now().toIso8601String(),
+          "createdAt": DateTime.now().toIso8601String(),
+        });
+    } catch (e) {
+      debugPrint("Error saving Google user to database: $e");
+    }
+  }
 }
 
-class _FlyingSpec {
-  final double speedSeconds;
+class _Particle {
+  final double x;
+  final double y;
   final double size;
-  final double verticalAnchor; // 0..1 of height
-  final double amplitude;
-  final double phase;
-  final IconData iconData;
+  final double speed;
+  final double angle;
+  final Color color;
+  final int type; // 0: circle, 1: square, 2: triangle
 
-  const _FlyingSpec({
-    required this.speedSeconds,
+  const _Particle({
+    required this.x,
+    required this.y,
     required this.size,
-    required this.verticalAnchor,
-    required this.amplitude,
-    required this.phase,
-    required this.iconData,
+    required this.speed,
+    required this.angle,
+    required this.color,
+    required this.type,
   });
 }
 
+class _Wave {
+  final double amplitude;
+  final double frequency;
+  final double speed;
+  final double phase;
+  final Color color;
+  final double yOffset;
+
+  const _Wave({
+    required this.amplitude,
+    required this.frequency,
+    required this.speed,
+    required this.phase,
+    required this.color,
+    required this.yOffset,
+  });
+}
+
+class _ParticlePainter extends CustomPainter {
+  final List<_Particle> particles;
+  final double animationValue;
+  final double width;
+  final double height;
+
+  _ParticlePainter({
+    required this.particles,
+    required this.animationValue,
+    required this.width,
+    required this.height,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    for (final particle in particles) {
+      final paint = Paint()
+        ..color = particle.color.withOpacity(0.6)
+        ..style = PaintingStyle.fill;
+
+      // Calculate animated position
+      final x = (particle.x + animationValue * particle.speed * 100) % width;
+      final y = (particle.y + math.sin(animationValue * math.pi * 2 + particle.angle) * 20) % height;
+
+      // Draw different shapes
+      switch (particle.type) {
+        case 0: // Circle
+          canvas.drawCircle(Offset(x, y), particle.size, paint);
+          break;
+        case 1: // Square
+          final rect = Rect.fromCenter(
+            center: Offset(x, y),
+            width: particle.size * 2,
+            height: particle.size * 2,
+          );
+          canvas.drawRect(rect, paint);
+          break;
+        case 2: // Triangle
+          final path = Path()
+            ..moveTo(x, y - particle.size)
+            ..lineTo(x - particle.size, y + particle.size)
+            ..lineTo(x + particle.size, y + particle.size)
+            ..close();
+          canvas.drawPath(path, paint);
+          break;
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
+}
+
+class _WavePainter extends CustomPainter {
+  final List<_Wave> waves;
+  final double animationValue;
+  final double width;
+  final double height;
+
+  _WavePainter({
+    required this.waves,
+    required this.animationValue,
+    required this.width,
+    required this.height,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    for (final wave in waves) {
+      final paint = Paint()
+        ..color = wave.color.withOpacity(0.3)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2;
+
+      final path = Path();
+      final y = wave.yOffset + wave.amplitude * math.sin(wave.frequency * width + wave.phase + animationValue * wave.speed * math.pi * 2);
+      
+      path.moveTo(0, y);
+      
+      for (double x = 0; x <= width; x += 2) {
+        final waveY = wave.yOffset + wave.amplitude * math.sin(wave.frequency * x + wave.phase + animationValue * wave.speed * math.pi * 2);
+        path.lineTo(x, waveY);
+      }
+      
+      canvas.drawPath(path, paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
+}
+
 class _SocialCircleButton extends StatelessWidget {
-  final String emoji;
+  final IconData icon;
   final VoidCallback onPressed;
   final String semanticsLabel;
   final bool enabled;
+  final Color color;
 
   const _SocialCircleButton({
-    required this.emoji,
+    required this.icon,
     required this.onPressed,
     required this.semanticsLabel,
     this.enabled = true,
+    this.color = Colors.white,
   });
 
   @override
@@ -483,12 +754,13 @@ class _SocialCircleButton extends StatelessWidget {
             color: enabled ? Colors.white.withOpacity(0.12) : Colors.white.withOpacity(0.06),
             border: Border.all(color: enabled ? Colors.white30 : Colors.white12),
           ),
-          child: Center(
-            child: Text(
-              emoji,
-              style: const TextStyle(fontSize: 24),
-            ),
-          ),
+                     child: Center(
+             child: Icon(
+               icon,
+               size: 24,
+               color: color,
+             ),
+           ),
         ),
       ),
     );
