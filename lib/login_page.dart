@@ -199,7 +199,9 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
 
     // Complete any pending Google sign-in redirect on Web and listen for auth changes
     if (kIsWeb) {
-      FirebaseAuth.instance.getRedirectResult().catchError((_) {});
+      FirebaseAuth.instance.getRedirectResult().catchError((error) {
+        throw error;
+      });
     }
     FirebaseAuth.instance.authStateChanges().listen((user) {
       if (!mounted || user == null) return;
@@ -459,7 +461,6 @@ class _SocialCircleButton extends StatelessWidget {
   final bool enabled;
 
   const _SocialCircleButton({
-    super.key,
     required this.emoji,
     required this.onPressed,
     required this.semanticsLabel,
