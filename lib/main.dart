@@ -4,7 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'firebase_options.dart';
 import 'login_page.dart';
-import 'finance_dashboard.dart';
+import 'enhanced_dashboard.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -106,8 +106,8 @@ class AuthWrapper extends StatelessWidget {
         }
         
         if (snapshot.hasData && snapshot.data != null) {
-          // User is logged in, show dashboard
-          return FinanceDashboard(
+          // User is logged in, show enhanced dashboard
+          return EnhancedDashboard(
             userId: snapshot.data!.uid,
             userName: snapshot.data!.displayName ?? 
                      snapshot.data!.email?.split('@')[0] ?? 'User',
@@ -140,7 +140,7 @@ class DashboardWrapper extends StatelessWidget {
       );
     }
     
-    return FinanceDashboard(
+    return EnhancedDashboard(
       userId: user.uid,
       userName: user.displayName ?? user.email?.split('@')[0] ?? 'User',
     );

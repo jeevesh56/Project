@@ -125,3 +125,4 @@ This document outlines the improvements made to the Mo-Mo app's authentication s
 - **Profile Management**: Add user profile editing capabilities
 - **Two-Factor Authentication**: Add 2FA support for enhanced security
 - **Social Account Management**: Allow users to manage linked social accounts
+
