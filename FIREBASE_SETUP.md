@@ -80,3 +80,4 @@ If you still get "Google provider not enabled" error:
 ---
 
 **Note:** The placeholder files I created will NOT work. You MUST download the real configuration files from Firebase Console and replace these placeholders.
+

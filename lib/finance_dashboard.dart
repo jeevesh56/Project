@@ -193,10 +193,21 @@ class _FinanceDashboardState extends State<FinanceDashboard> {
           IconButton(
             icon: const Icon(Icons.logout),
             onPressed: () async {
-              await FirebaseAuth.instance.signOut();
-              // Navigate back to login page
-              if (mounted) {
-                Navigator.of(context).pushReplacementNamed('/login');
+              try {
+                await FirebaseAuth.instance.signOut();
+                // Navigate back to login page
+                if (mounted) {
+                  Navigator.of(context).pushReplacementNamed('/login');
+                }
+              } catch (e) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Logout failed: $e'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
               }
             },
           ),

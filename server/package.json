@@ -1,0 +1,30 @@
+{
+  "name": "smart-ai-finance-server",
+  "version": "1.0.0",
+  "description": "AI Finance Chatbot Backend for Smart AI Flutter App",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": ["finance", "ai", "chatbot", "firebase", "flutter"],
+  "author": "Smart AI Team",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.18.2",
+    "cors": "^2.8.5",
+    "node-fetch": "^2.7.0",
+    "firebase-admin": "^12.0.0",
+    "dotenv": "^16.3.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  }
+}
+
+
+

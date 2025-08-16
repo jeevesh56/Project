@@ -7,6 +7,8 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import 'dart:math' as math;
+import 'package:shared_preferences/shared_preferences.dart';
+import 'widgets/momo_logo.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -19,6 +21,8 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   bool isLogin = true;
+  bool rememberMe = false;
+  bool _obscurePassword = true; // Add password visibility toggle
 
   // Toggle which providers are clickable to avoid runtime config errors
   // Set to true after enabling each provider in Firebase Console
@@ -46,8 +50,33 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
         // Update last sign-in time for existing users
         if (userCredential.user != null) {
           await _saveUserToDatabase(userCredential.user!, isUpdate: true);
+          await _maybeStoreCredentials();
+          if (!rememberMe) {
+            // Prompt to remember credentials after a successful login
+            _showRememberDialog();
+          }
+          // Navigation handled by StreamBuilder in main.dart
         }
       } else {
+        // Check if email already exists before trying to create account
+        try {
+          final methods = await auth.fetchSignInMethodsForEmail(_emailController.text.trim());
+          if (methods.isNotEmpty) {
+            // Email already exists, suggest login instead
+            setState(() => isLogin = true);
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('An account with this email already exists. Please log in instead.'),
+                backgroundColor: Colors.orange,
+                duration: Duration(seconds: 4),
+              ),
+            );
+            return;
+          }
+        } catch (e) {
+          // Continue with account creation if check fails
+        }
+        
         userCredential = await auth.createUserWithEmailAndPassword(
           email: _emailController.text.trim(),
           password: _passwordController.text.trim(),
@@ -55,16 +84,69 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
         // Save new user to database
         if (userCredential.user != null) {
           await _saveUserToDatabase(userCredential.user!, isUpdate: false);
+          // After creating account, sign out and go back to login for explicit login flow
+          await auth.signOut();
+          if (!mounted) return;
+          setState(() => isLogin = true);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Account created successfully! Please log in with your credentials.'),
+              backgroundColor: Colors.green,
+            ),
+          );
         }
       }
     } catch (e) {
       if (!mounted) return;
-      String message = e.toString();
-      if (e is FirebaseAuthException &&
-          (e.code == 'configuration-not-found' || e.code == 'operation-not-allowed')) {
-        message = 'Auth provider not configured. Please enable the provider in Firebase Console.';
+      String message = '';
+      Color backgroundColor = Colors.red;
+      
+      if (e is FirebaseAuthException) {
+        switch (e.code) {
+          case 'user-not-found':
+            message = 'No account found with this email. Please sign up first.';
+            backgroundColor = Colors.orange;
+            setState(() => isLogin = false);
+            break;
+          case 'wrong-password':
+            message = 'Incorrect password. Please try again.';
+            backgroundColor = Colors.red;
+            break;
+          case 'email-already-in-use':
+            message = 'An account with this email already exists. Please log in instead.';
+            backgroundColor = Colors.orange;
+            // Switch to login mode for existing users
+            setState(() => isLogin = true);
+            break;
+          case 'weak-password':
+            message = 'Password is too weak. Please use a stronger password (at least 6 characters).';
+            backgroundColor = Colors.red;
+            break;
+          case 'invalid-email':
+            message = 'Please enter a valid email address.';
+            backgroundColor = Colors.red;
+            break;
+          case 'configuration-not-found':
+          case 'operation-not-allowed':
+            message = 'Authentication provider not configured. Please contact support.';
+            backgroundColor = Colors.red;
+            break;
+          default:
+            message = 'Authentication failed: ${e.message}';
+            backgroundColor = Colors.red;
+        }
+      } else {
+        message = 'An unexpected error occurred: $e';
+        backgroundColor = Colors.red;
       }
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(message),
+          backgroundColor: backgroundColor,
+          duration: const Duration(seconds: 4),
+        ),
+      );
     }
   }
 
@@ -82,7 +164,10 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
       if (e is FirebaseAuthException && (e.code == 'operation-not-allowed')) {
         message = 'Anonymous auth not enabled. Enable it in Firebase Console > Authentication.';
       }
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.red,
+      ));
     }
   }
 
@@ -93,6 +178,28 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
       
       if (kIsWeb) {
         final googleProvider = GoogleAuthProvider();
+        // Force account selection on web
+        googleProvider.setCustomParameters({
+          'prompt': 'select_account'
+        });
+        
+        // Show loading dialog
+        if (mounted) {
+          showDialog(
+            context: context,
+            barrierDismissible: false,
+            builder: (context) => const AlertDialog(
+              content: Row(
+                children: [
+                  CircularProgressIndicator(),
+                  SizedBox(width: 16),
+                  Text('Signing in with Google...'),
+                ],
+              ),
+            ),
+          );
+        }
+        
         try {
           userCredential = await auth.signInWithPopup(googleProvider);
         } on FirebaseAuthException catch (e) {
@@ -104,8 +211,42 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
           rethrow;
         }
       } else {
-        final GoogleSignInAccount? googleUser = await GoogleSignIn().signIn();
-        if (googleUser == null) return; // canceled
+        // Configure GoogleSignIn to show account picker
+        final GoogleSignIn googleSignIn = GoogleSignIn(
+          scopes: ['email', 'profile'],
+          // Force account selection
+          signInOption: SignInOption.standard,
+        );
+        
+        // Sign out first to ensure account picker shows
+        await googleSignIn.signOut();
+        
+        // Show loading dialog
+        if (mounted) {
+          showDialog(
+            context: context,
+            barrierDismissible: false,
+            builder: (context) => const AlertDialog(
+              content: Row(
+                children: [
+                  CircularProgressIndicator(),
+                  SizedBox(width: 16),
+                  Text('Signing in with Google...'),
+                ],
+              ),
+            ),
+          );
+        }
+        
+        final GoogleSignInAccount? googleUser = await googleSignIn.signIn();
+        if (googleUser == null) {
+          // Close loading dialog
+          if (mounted && Navigator.of(context).canPop()) {
+            Navigator.of(context).pop();
+          }
+          return; // canceled
+        }
+        
         final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
         final credential = GoogleAuthProvider.credential(
           accessToken: googleAuth.accessToken,
@@ -114,20 +255,177 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
         userCredential = await auth.signInWithCredential(credential);
       }
       
+      // Close loading dialog
+      if (mounted && Navigator.of(context).canPop()) {
+        Navigator.of(context).pop();
+      }
+      
       // Save Google user data to database
       if (userCredential.user != null) {
         await _saveGoogleUserToDatabase(userCredential);
+        
+        // Show email confirmation dialog
+        if (mounted) {
+          _showEmailConfirmationDialog(userCredential.user!.email ?? '');
+        }
+        
+        // Force refresh the auth state to ensure navigation
+        await auth.currentUser?.reload();
+        
+        // Show success message
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Successfully signed in with Google! Redirecting...'),
+              backgroundColor: Colors.green,
+              duration: Duration(seconds: 2),
+            ),
+          );
+        }
+        
+        // The StreamBuilder in main.dart should automatically navigate to dashboard
+        // But let's add a small delay to ensure the auth state is properly updated
+        await Future.delayed(const Duration(milliseconds: 500));
+        
+        // Check if we're still on the login page after delay
+        if (mounted && Navigator.of(context).canPop() == false) {
+          // If we're still on login page, manually navigate to dashboard
+          _navigateToDashboard();
+        }
+        
       }
     } catch (e) {
+      // Close loading dialog if it's open
+      if (mounted && Navigator.of(context).canPop()) {
+        Navigator.of(context).pop();
+      }
+      
       if (!mounted) return;
       String message = e.toString();
       if (e is FirebaseAuthException && (e.code == 'operation-not-allowed' || e.code == 'configuration-not-found')) {
         message = 'Google provider not enabled for this Firebase project. In Console → Authentication → Sign-in method, enable Google and Save. Also ensure localhost/127.0.0.1 are in Authorized domains.';
       }
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.red,
+      ));
     }
   }
 
+  // Show email confirmation dialog for Google sign-in
+  void _showEmailConfirmationDialog(String email) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.email, color: Colors.green),
+            SizedBox(width: 8),
+            Text('Email Confirmed'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'You have successfully signed in with Google using:',
+              style: TextStyle(fontSize: 16),
+            ),
+            SizedBox(height: 16),
+            Container(
+              padding: EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.green.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.green.withOpacity(0.3)),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.check_circle, color: Colors.green, size: 20),
+                  SizedBox(width: 8),
+                  Text(
+                    email,
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.green[700],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            SizedBox(height: 16),
+            Text(
+              'This email will be used for your account and can be used to sign in later.',
+              style: TextStyle(fontSize: 14, color: Colors.grey[600]),
+            ),
+            SizedBox(height: 8),
+            Text(
+              'You can also use this same email with a password for regular login.',
+              style: TextStyle(fontSize: 12, color: Colors.blue[600], fontStyle: FontStyle.italic),
+            ),
+            SizedBox(height: 16),
+            Container(
+              padding: EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.blue.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.blue.withOpacity(0.3)),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.info_outline, color: Colors.blue, size: 20),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'If you have an existing account with this email, you can use either sign-in method.',
+                      style: TextStyle(fontSize: 12, color: Colors.blue[700]),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            SizedBox(height: 16),
+            Container(
+              padding: EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.orange.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.orange.withOpacity(0.3)),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.security, color: Colors.orange, size: 20),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'For added security, you can set a password for this account in your profile settings.',
+                      style: TextStyle(fontSize: 12, color: Colors.orange[700]),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          ElevatedButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+              // Navigate to dashboard
+              _navigateToDashboard();
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.green,
+              foregroundColor: Colors.white,
+            ),
+            child: Text('Continue to Dashboard'),
+          ),
+        ],
+      ),
+    );
+  }
 
 
   Future<void> _signInWithApple() async {
@@ -135,9 +433,70 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
       final auth = FirebaseAuth.instance;
       if (kIsWeb) {
         final appleProvider = AppleAuthProvider();
+        
+        // Show loading dialog
+        if (mounted) {
+          showDialog(
+            context: context,
+            barrierDismissible: false,
+            builder: (context) => const AlertDialog(
+              content: Row(
+                children: [
+                  CircularProgressIndicator(),
+                  SizedBox(width: 16),
+                  Text('Signing in with Apple...'),
+                ],
+              ),
+            ),
+          );
+        }
+        
         try {
-          await auth.signInWithPopup(appleProvider);
+          final userCredential = await auth.signInWithPopup(appleProvider);
+          if (userCredential.user != null) {
+            // Close loading dialog
+            if (mounted && Navigator.of(context).canPop()) {
+              Navigator.of(context).pop();
+            }
+            
+            await _saveAppleUserToDatabase(userCredential);
+            
+            // Show email confirmation dialog
+            if (mounted) {
+              _showEmailConfirmationDialog(userCredential.user!.email ?? 'Apple User');
+            }
+            
+            // Force refresh the auth state to ensure navigation
+            await auth.currentUser?.reload();
+            
+            // Show success message
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Successfully signed in with Apple! Redirecting...'),
+                  backgroundColor: Colors.green,
+                  duration: Duration(seconds: 2),
+                ),
+              );
+            }
+            
+            // The StreamBuilder in main.dart should automatically navigate to dashboard
+            // But let's add a small delay to ensure the auth state is properly updated
+            await Future.delayed(const Duration(milliseconds: 500));
+            
+            // Check if we're still on the login page after delay
+            if (mounted && Navigator.of(context).canPop() == false) {
+              // If we're still on login page, manually navigate to dashboard
+              _navigateToDashboard();
+            }
+            
+          }
         } on FirebaseAuthException catch (e) {
+          // Close loading dialog
+          if (mounted && Navigator.of(context).canPop()) {
+            Navigator.of(context).pop();
+          }
+          
           // If the browser blocks popups or the popup was closed, try redirect
           if (e.code == 'popup-blocked' || e.code == 'popup-closed-by-user') {
             await auth.signInWithRedirect(appleProvider);
@@ -147,6 +506,23 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
         }
       } else {
         // For mobile platforms
+        // Show loading dialog
+        if (mounted) {
+          showDialog(
+            context: context,
+            barrierDismissible: false,
+            builder: (context) => const AlertDialog(
+              content: Row(
+                children: [
+                  CircularProgressIndicator(),
+                  SizedBox(width: 16),
+                  Text('Signing in with Apple...'),
+                ],
+              ),
+            ),
+          );
+        }
+        
         final appleIdCredential = await SignInWithApple.getAppleIDCredential(
           scopes: [
             AppleIDAuthorizationScopes.email,
@@ -155,6 +531,10 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
         );
         
         if (appleIdCredential.identityToken == null) {
+          // Close loading dialog
+          if (mounted && Navigator.of(context).canPop()) {
+            Navigator.of(context).pop();
+          }
           throw Exception('Apple Sign-In failed: No identity token received');
         }
         
@@ -163,9 +543,52 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
           accessToken: appleIdCredential.authorizationCode,
         );
         
-        await auth.signInWithCredential(oauthCredential);
+        final userCredential = await auth.signInWithCredential(oauthCredential);
+        
+        // Close loading dialog
+        if (mounted && Navigator.of(context).canPop()) {
+          Navigator.of(context).pop();
+        }
+        
+        if (userCredential.user != null) {
+          await _saveAppleUserToDatabase(userCredential);
+          
+          // Show email confirmation dialog
+          if (mounted) {
+            _showEmailConfirmationDialog(userCredential.user!.email ?? 'Apple User');
+          }
+          
+          // Force refresh the auth state to ensure navigation
+          await auth.currentUser?.reload();
+          
+          // Show success message
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Successfully signed in with Apple! Redirecting...'),
+                backgroundColor: Colors.green,
+                duration: Duration(seconds: 2),
+              ),
+            );
+          }
+          
+          // The StreamBuilder in main.dart should automatically navigate to dashboard
+          // But let's add a small delay to ensure the auth state is properly updated
+          await Future.delayed(const Duration(milliseconds: 500));
+          
+          // Check if we're still on the login page after delay
+          if (mounted && Navigator.of(context).canPop() == false) {
+            // If we're still on login page, manually navigate to dashboard
+            _navigateToDashboard();
+          }
+        }
       }
     } catch (e) {
+      // Close loading dialog if it's open
+      if (mounted && Navigator.of(context).canPop()) {
+        Navigator.of(context).pop();
+      }
+      
       if (!mounted) return;
       String message = e.toString();
       
@@ -268,11 +691,35 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
     if (kIsWeb) {
       FirebaseAuth.instance.getRedirectResult().then((userCredential) {
         if (userCredential.user != null) {
-          // Save Google user data to database after redirect
-          _saveGoogleUserToDatabase(userCredential);
+          final providerId = userCredential.credential?.providerId 
+              ?? userCredential.additionalUserInfo?.providerId 
+              ?? '';
+          
+          if (providerId.contains('google')) {
+            _saveGoogleUserToDatabase(userCredential);
+            // Show email confirmation dialog
+            if (mounted) {
+              _showEmailConfirmationDialog(userCredential.user!.email ?? 'Google User');
+            }
+          } else if (providerId.contains('apple')) {
+            _saveAppleUserToDatabase(userCredential);
+            // Show email confirmation dialog
+            if (mounted) {
+              _showEmailConfirmationDialog(userCredential.user!.email ?? 'Apple User');
+            }
+          } else {
+            _saveUserToDatabase(userCredential.user!, isUpdate: true);
+          }
         }
       }).catchError((error) {
-        debugPrint("Redirect result error: $error");
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Sign-in error: $error'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
       });
     }
     FirebaseAuth.instance.authStateChanges().listen((user) {
@@ -285,6 +732,8 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
         );
       });
     });
+
+    _loadRememberedCredentials();
   }
 
   // Compute animated gradient colors based on time t in [0,1] - cozy warm theme
@@ -391,7 +840,11 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
                           children: [
                                                          Column(
                                children: [
-                                 const Icon(Icons.psychology, size: 60, color: Colors.white),
+                                 // Mo-Mo Money Monitor Logo
+                                 MoMoEnhancedLogo(
+                                   size: 100,
+                                   showText: false, // We'll handle text separately for better layout
+                                 ),
                                  const SizedBox(height: 8),
                                  const Text(
                                    "Mo-Mo",
@@ -437,12 +890,19 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
                                 ),
                                 filled: true,
                                 fillColor: Colors.white.withOpacity(0.08),
+                                suffixIcon: rememberMe && _emailController.text.isNotEmpty
+                                    ? Icon(
+                                        Icons.check_circle,
+                                        color: Colors.green,
+                                        size: 20,
+                                      )
+                                    : null,
                               ),
                             ),
                             const SizedBox(height: 12),
                             TextField(
                               controller: _passwordController,
-                              obscureText: true,
+                              obscureText: _obscurePassword,
                               style: const TextStyle(color: Colors.white),
                               decoration: InputDecoration(
                                 labelText: "Password",
@@ -457,9 +917,78 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
                                 ),
                                 filled: true,
                                 fillColor: Colors.white.withOpacity(0.08),
+                                suffixIcon: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    // Password visibility toggle
+                                    IconButton(
+                                      icon: Icon(
+                                        _obscurePassword ? Icons.visibility : Icons.visibility_off,
+                                        color: Colors.white70,
+                                      ),
+                                      onPressed: () {
+                                        setState(() {
+                                          _obscurePassword = !_obscurePassword;
+                                        });
+                                      },
+                                    ),
+                                    // Green checkmark when credentials are remembered
+                                    if (rememberMe && _passwordController.text.isNotEmpty)
+                                      Icon(
+                                        Icons.check_circle,
+                                        color: Colors.green,
+                                        size: 20,
+                                      ),
+                                  ],
+                                ),
                               ),
                             ),
                             const SizedBox(height: 16),
+                            Row(
+                              children: [
+                                Checkbox(
+                                  value: rememberMe,
+                                  onChanged: (v) {
+                                    setState(() => rememberMe = v ?? false);
+                                    if (!rememberMe) {
+                                      // If unchecking, clear saved credentials
+                                      _clearRememberedCredentials();
+                                    }
+                                  },
+                                  activeColor: Colors.deepPurpleAccent,
+                                ),
+                                Expanded(
+                                  child: GestureDetector(
+                                    onTap: () {
+                                      setState(() => rememberMe = !rememberMe);
+                                      if (!rememberMe) {
+                                        _clearRememberedCredentials();
+                                      }
+                                    },
+                                    child: const Text(
+                                      'Remember username and password',
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 14,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            if (rememberMe)
+                              Padding(
+                                padding: const EdgeInsets.only(left: 48.0, top: 4.0),
+                                child: Text(
+                                  'Your credentials will be saved securely for easy login',
+                                  style: TextStyle(
+                                    color: Colors.white60,
+                                    fontSize: 12,
+                                    fontStyle: FontStyle.italic,
+                                  ),
+                                ),
+                              ),
+                            const SizedBox(height: 8),
                             SizedBox(
                               width: double.infinity,
                               child: ElevatedButton(
@@ -510,10 +1039,10 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
                                ],
                              ),
                             const SizedBox(height: 8),
-                                                         TextButton(
-                               onPressed: _anonymousEnabled ? _signInAnonymously : null,
-                               child: const Text('Continue without an account', style: TextStyle(color: Colors.white)),
-                             ),
+                            TextButton(
+                              onPressed: _anonymousEnabled ? _signInAnonymously : null,
+                              child: const Text('Continue without an account', style: TextStyle(color: Colors.white)),
+                            ),
                             TextButton(
                               onPressed: () => setState(() => isLogin = !isLogin),
                               child: Text(
@@ -535,28 +1064,186 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
     );
   }
   
+  Future<void> _loadRememberedCredentials() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final savedEmail = prefs.getString('saved_email');
+      final savedPassword = prefs.getString('saved_password');
+      final savedRemember = prefs.getBool('remember_me') ?? false;
+      
+      if (savedEmail != null && savedPassword != null && savedRemember) {
+        _emailController.text = savedEmail;
+        _passwordController.text = savedPassword;
+        setState(() => rememberMe = true);
+      }
+    } catch (e) {
+      // Silent error handling for production
+    }
+  }
+
+  Future<void> _maybeStoreCredentials() async {
+    if (!rememberMe) return;
+    
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final email = _emailController.text.trim();
+      final password = _passwordController.text.trim();
+      
+      if (email.isNotEmpty && password.isNotEmpty) {
+        await prefs.setString('saved_email', email);
+        await prefs.setString('saved_password', password);
+        await prefs.setBool('remember_me', true);
+      }
+    } catch (e) {
+      // Silent error handling for production
+    }
+  }
+
+  Future<void> _clearRememberedCredentials() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('saved_email');
+      await prefs.remove('saved_password');
+      await prefs.setBool('remember_me', false);
+    } catch (e) {
+      // Silent error handling for production
+    }
+  }
+
+  Future<void> _showRememberDialog() async {
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      builder: (context) {
+        bool dialogRemember = rememberMe;
+        return AlertDialog(
+          title: Row(
+            children: [
+              Icon(Icons.security, color: Colors.deepPurple),
+              SizedBox(width: 8),
+              Text('Remember Credentials?'),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Would you like to save your email and password for easy login next time?',
+                style: TextStyle(fontSize: 16),
+              ),
+              SizedBox(height: 16),
+              StatefulBuilder(
+                builder: (context, setStateSB) {
+                  return Row(
+                    children: [
+                      Checkbox(
+                        value: dialogRemember,
+                        onChanged: (v) => setStateSB(() => dialogRemember = v ?? false),
+                        activeColor: Colors.deepPurple,
+                      ),
+                      Expanded(
+                        child: Text(
+                          'Save email & password securely',
+                          style: TextStyle(fontSize: 14),
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
+              SizedBox(height: 8),
+              Text(
+                'Your credentials are stored locally on your device and are encrypted.',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey[600],
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+              child: Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                setState(() => rememberMe = dialogRemember);
+                if (rememberMe) {
+                  await _maybeStoreCredentials();
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Credentials saved successfully!'),
+                      backgroundColor: Colors.green,
+                    ),
+                  );
+                } else {
+                  await _clearRememberedCredentials();
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Credentials cleared'),
+                      backgroundColor: Colors.orange,
+                    ),
+                  );
+                }
+                if (mounted) Navigator.of(context).pop();
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.deepPurple,
+                foregroundColor: Colors.white,
+              ),
+              child: Text('Save'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  // Helper method to manually navigate to dashboard
+  void _navigateToDashboard() {
+    if (mounted) {
+      Navigator.of(context).pushReplacementNamed('/dashboard');
+    }
+  }
+
   // Helper method to save user data to database
   Future<void> _saveUserToDatabase(User user, {required bool isUpdate}) async {
     try {
-      // Use default instance to avoid multiple database initializations
       final database = FirebaseDatabase.instance;
+      final profileRef = database.ref("users/${user.uid}/profile");
+      final nowIso = DateTime.now().toIso8601String();
+
       if (isUpdate) {
-          // Update last sign-in time for existing users
-          await database.ref("users/${user.uid}/lastSignIn").set(
-            DateTime.now().toIso8601String(),
-          );
-        } else {
-          // Save new user data
-          await database.ref("users/${user.uid}").set({
-            "email": user.email,
-            "displayName": user.email?.split('@')[0] ?? "User",
-            "isEmailUser": true,
-            "createdAt": DateTime.now().toIso8601String(),
-            "lastSignIn": DateTime.now().toIso8601String(),
-          });
-        }
+        await profileRef.update({
+          "lastSignIn": nowIso,
+          "email": user.email,
+        });
+      } else {
+        await profileRef.set({
+          "email": user.email,
+          "displayName": user.email?.split('@')[0] ?? "User",
+          "isEmailUser": true,
+          "createdAt": nowIso,
+          "lastSignIn": nowIso,
+          "providerId": "password",
+          "isVerified": user.emailVerified,
+        });
+      }
     } catch (e) {
-      debugPrint("Error saving user to database: $e");
+      // Show error to user
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to save user data: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
@@ -564,31 +1251,115 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
   Future<void> _saveGuestUserToDatabase(User user) async {
     try {
       final database = FirebaseDatabase.instance;
-      await database.ref("users/${user.uid}").set({
-          "email": "guest@anonymous.com",
-          "displayName": "Guest User",
-          "isGuest": true,
-          "createdAt": DateTime.now().toIso8601String(),
-        });
+      final profileRef = database.ref("users/${user.uid}/profile");
+      final nowIso = DateTime.now().toIso8601String();
+      await profileRef.set({
+        "email": "guest@anonymous.com",
+        "displayName": "Guest User",
+        "isGuest": true,
+        "createdAt": nowIso,
+        "lastSignIn": nowIso,
+        "providerId": "anonymous",
+        "isVerified": false,
+      });
     } catch (e) {
-      debugPrint("Error saving guest user to database: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to save guest user data: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
   // Helper method to save Google user data to database
   Future<void> _saveGoogleUserToDatabase(UserCredential userCredential) async {
     try {
+      final user = userCredential.user;
+      if (user == null) {
+        return;
+      }
+
       final database = FirebaseDatabase.instance;
-      await database.ref("users/${userCredential.user!.uid}").set({
-          "email": userCredential.user!.email,
-          "displayName": userCredential.user!.displayName ?? "Google User",
-          "photoURL": userCredential.user!.photoURL,
-          "isGoogleUser": true,
-          "lastSignIn": DateTime.now().toIso8601String(),
-          "createdAt": DateTime.now().toIso8601String(),
-        });
+      final profileRef = database.ref("users/${user.uid}/profile");
+      final nowIso = DateTime.now().toIso8601String();
+      
+      await profileRef.set({
+        "email": user.email,
+        "displayName": user.displayName ?? "Google User",
+        "photoURL": user.photoURL,
+        "isGoogleUser": true,
+        "lastSignIn": nowIso,
+        "createdAt": nowIso,
+        "providerId": "google.com",
+        "isVerified": user.emailVerified,
+        "uid": user.uid,
+      });
+      
+      // Show success message
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Successfully signed in with Google!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
     } catch (e) {
-      debugPrint("Error saving Google user to database: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to save Google user data: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  // Helper method to save Apple user data to database
+  Future<void> _saveAppleUserToDatabase(UserCredential userCredential) async {
+    try {
+      final user = userCredential.user;
+      if (user == null) {
+        return;
+      }
+
+      final database = FirebaseDatabase.instance;
+      final profileRef = database.ref("users/${user.uid}/profile");
+      final nowIso = DateTime.now().toIso8601String();
+      
+      await profileRef.set({
+        "email": user.email,
+        "displayName": user.displayName ?? "Apple User",
+        "isAppleUser": true,
+        "lastSignIn": nowIso,
+        "createdAt": nowIso,
+        "providerId": "apple.com",
+        "isVerified": user.emailVerified,
+        "uid": user.uid,
+      });
+      
+      // Show success message
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Successfully signed in with Apple!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to save Apple user data: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 }
