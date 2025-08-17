@@ -45,5 +45,17 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	
+	<!-- Camera permissions for OCR scanner -->
+	<key>NSCameraUsageDescription</key>
+	<string>This app needs camera access to scan documents and extract text using OCR.</string>
+	
+	<!-- Photo library permissions for image picker -->
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>This app needs photo library access to import images for OCR text extraction.</string>
+	
+	<!-- Microphone permissions (if needed for future features) -->
+	<key>NSMicrophoneUsageDescription</key>
+	<string>This app may need microphone access for voice input features.</string>
 </dict>
 </plist>

@@ -2,12 +2,30 @@ import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'firebase_options.dart';
 import 'login_page.dart';
+import 'screens/about_momo_screen.dart';
 import 'enhanced_dashboard.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  
+  // Set preferred orientations for mobile
+  SystemChrome.setPreferredOrientations([
+    DeviceOrientation.portraitUp,
+    DeviceOrientation.portraitDown,
+  ]);
+  
+  // Set system UI overlay style for mobile
+  SystemChrome.setSystemUIOverlayStyle(
+    const SystemUiOverlayStyle(
+      statusBarColor: Colors.transparent,
+      statusBarIconBrightness: Brightness.dark,
+      systemNavigationBarColor: Colors.white,
+      systemNavigationBarIconBrightness: Brightness.dark,
+    ),
+  );
   
   try {
     await Firebase.initializeApp(
@@ -39,6 +57,16 @@ class MyApp extends StatelessWidget {
         fontFamily: 'Poppins',
         primarySwatch: Colors.deepPurple,
         visualDensity: VisualDensity.adaptivePlatformDensity,
+        // Mobile-specific theme optimizations
+        useMaterial3: true,
+        brightness: Brightness.light,
+      ),
+      darkTheme: ThemeData(
+        fontFamily: 'Poppins',
+        primarySwatch: Colors.deepPurple,
+        visualDensity: VisualDensity.adaptivePlatformDensity,
+        useMaterial3: true,
+        brightness: Brightness.dark,
       ),
       home: const AuthWrapper(),
       routes: {
@@ -106,12 +134,8 @@ class AuthWrapper extends StatelessWidget {
         }
         
         if (snapshot.hasData && snapshot.data != null) {
-          // User is logged in, show enhanced dashboard
-          return EnhancedDashboard(
-            userId: snapshot.data!.uid,
-            userName: snapshot.data!.displayName ?? 
-                     snapshot.data!.email?.split('@')[0] ?? 'User',
-          );
+          // User is logged in, show About Mo-Mo screen first
+          return const AboutMoMoScreen();
         }
         
         // User is not logged in, show login page

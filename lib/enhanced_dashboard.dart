@@ -4,8 +4,9 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'transaction_entry_screen.dart';
-import 'dart:math' as math;
+import 'screens/manual_transaction_entry_screen.dart';
+import 'screens/currency_selection_screen.dart';
+import 'ocr_scanner_screen.dart';
 
 class EnhancedDashboard extends StatefulWidget {
   final String userId;
@@ -27,26 +28,25 @@ class _EnhancedDashboardState extends State<EnhancedDashboard>
   List<Map<String, dynamic>> categories = [];
 
   bool loading = true;
+  bool _isDarkMode = false;
   int _selectedIndex = 0;
   DatabaseReference? _databaseRef;
   
   // Voice recognition
-  SpeechToText _speechToText = SpeechToText();
+  final SpeechToText _speechToText = SpeechToText();
   bool _speechEnabled = false;
   bool _isListening = false;
   String _lastWords = '';
 
   // Chatbot
   List<Map<String, dynamic>> chatMessages = [];
-  TextEditingController _chatController = TextEditingController();
-  bool _isTyping = false;
+  final TextEditingController _chatController = TextEditingController();
 
   // Animation controllers
   late AnimationController _fadeController;
   late AnimationController _slideController;
   late AnimationController _pulseController;
   
-  late Animation<double> _fadeAnimation;
   late Animation<Offset> _slideAnimation;
   late Animation<double> _pulseAnimation;
 
@@ -79,14 +79,6 @@ class _EnhancedDashboardState extends State<EnhancedDashboard>
       vsync: this,
     );
 
-    _fadeAnimation = Tween<double>(
-      begin: 0.0,
-      end: 1.0,
-    ).animate(CurvedAnimation(
-      parent: _fadeController,
-      curve: Curves.easeOut,
-    ));
-
     _slideAnimation = Tween<Offset>(
       begin: const Offset(0, 0.3),
       end: Offset.zero,
@@ -103,7 +95,6 @@ class _EnhancedDashboardState extends State<EnhancedDashboard>
       curve: Curves.easeInOut,
     ));
 
-    _fadeController.forward();
     _slideController.forward();
     _pulseController.repeat(reverse: true);
   }
@@ -279,38 +270,9 @@ class _EnhancedDashboardState extends State<EnhancedDashboard>
     });
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.grey[100],
-      body: loading
-          ? const Center(child: CircularProgressIndicator())
-          : _buildBody(),
-      bottomNavigationBar: _buildBottomNavigationBar(),
-      floatingActionButton: _selectedIndex == 0 ? FloatingActionButton.extended(
-        onPressed: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => TransactionEntryScreen(
-                userId: widget.userId,
-                onTransactionAdded: () {
-                  fetchDashboardData();
-                },
-              ),
-            ),
-          );
-        },
-        backgroundColor: Colors.blue,
-        foregroundColor: Colors.white,
-        icon: const Icon(Icons.add),
-        label: const Text('Add Transaction'),
-      ) : null,
-    );
-  }
-
-  Widget _buildBody() {
-    switch (_selectedIndex) {
+  // Helper method to get the correct screen based on index
+  Widget _getScreenByIndex(int index) {
+    switch (index) {
       case 0:
         return _buildDashboard();
       case 1:
@@ -328,15 +290,48 @@ class _EnhancedDashboardState extends State<EnhancedDashboard>
     }
   }
 
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: _isDarkMode ? Colors.grey[900] : Colors.grey[100],
+      body: loading
+          ? const Center(child: CircularProgressIndicator())
+          : _buildBody(),
+      bottomNavigationBar: _buildBottomNavigationBar(),
+      floatingActionButton: _selectedIndex == 0 ? FloatingActionButton(
+        onPressed: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => ManualTransactionEntryScreen(
+                userId: widget.userId,
+                onTransactionAdded: () {
+                  fetchDashboardData();
+                },
+              ),
+            ),
+          );
+        },
+        backgroundColor: Colors.blue,
+        foregroundColor: Colors.white,
+        child: const Icon(Icons.add),
+      ) : null,
+    );
+  }
+
+  Widget _buildBody() {
+    return _getScreenByIndex(_selectedIndex);
+  }
+
   Widget _buildDashboard() {
     return SingleChildScrollView(
       child: Column(
         children: [
           _buildHeader(),
           _buildBalanceCard(),
+          _buildOCRScannerButton(),
           _buildQuickStats(),
           _buildAIInsights(),
-          _buildRecentTransactions(),
           _buildBudgetOverview(),
         ],
       ),
@@ -357,49 +352,78 @@ class _EnhancedDashboardState extends State<EnhancedDashboard>
           bottomRight: Radius.circular(30),
         ),
       ),
-      child: SafeArea(
-        child: Column(
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Welcome back,',
-                      style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.8),
-                        fontSize: 16,
+              child: SafeArea(
+          child: Column(
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                                  // Profile icon on the left
+                GestureDetector(
+                  onTap: () {
+                    setState(() {
+                      _selectedIndex = 5; // Profile index
+                    });
+                  },
+                    child: Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.2),
+                        borderRadius: BorderRadius.circular(15),
                       ),
-                    ),
-                    Text(
-                      widget.userName,
-                      style: const TextStyle(
+                      child: const Icon(
+                        Icons.person,
                         color: Colors.white,
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
+                        size: 24,
                       ),
                     ),
-                  ],
-                ),
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.2),
-                    borderRadius: BorderRadius.circular(15),
                   ),
-                  child: const Icon(
-                    Icons.notifications_outlined,
-                    color: Colors.white,
-                    size: 24,
+                  // Welcome text in center
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Text(
+                        'Welcome back,',
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.8),
+                          fontSize: 16,
+                        ),
+                      ),
+                      Text(
+                        widget.userName,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
                   ),
-                ),
-              ],
-            ),
-          ],
+                  // Transactions icon on the right
+                  GestureDetector(
+                    onTap: () {
+                      setState(() {
+                        _selectedIndex = 1; // Transactions index
+                      });
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.2),
+                        borderRadius: BorderRadius.circular(15),
+                      ),
+                      child: const Icon(
+                        Icons.receipt_long,
+                        color: Colors.white,
+                        size: 24,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
-      ),
     );
   }
 
@@ -491,6 +515,85 @@ class _EnhancedDashboardState extends State<EnhancedDashboard>
               ],
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildOCRScannerButton() {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+      child: GestureDetector(
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => const OCRScannerScreen(),
+            ),
+          );
+        },
+        child: Container(
+          width: double.infinity,
+          height: 120,
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [
+                Colors.blue.withOpacity(0.8),
+                Colors.purple.withOpacity(0.8),
+              ],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.blue.withOpacity(0.3),
+                blurRadius: 15,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(15),
+                ),
+                child: const Icon(
+                  Icons.document_scanner,
+                  size: 32,
+                  color: Colors.white,
+                ),
+              ),
+              const SizedBox(width: 16),
+              Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    "OCR Scanner",
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    "Scan receipts & extract text",
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.white.withOpacity(0.8),
+                      fontStyle: FontStyle.italic,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -664,77 +767,7 @@ class _EnhancedDashboardState extends State<EnhancedDashboard>
     }
   }
 
-  Widget _buildRecentTransactions() {
-    return Container(
-      margin: const EdgeInsets.all(20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Recent Transactions',
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 15),
-          Container(
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(20),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.grey.withValues(alpha: 0.1),
-                  blurRadius: 10,
-                  offset: const Offset(0, 5),
-                ),
-              ],
-            ),
-            child: ListView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: transactions.take(5).length,
-              itemBuilder: (context, index) {
-                final transaction = transactions[index];
-                final amount = (transaction['amount'] as num?)?.toDouble() ?? 0.0;
-                final isIncome = amount > 0;
-                
-                return ListTile(
-                  leading: Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: (isIncome ? Colors.green : Colors.red).withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Icon(
-                      isIncome ? Icons.trending_up : Icons.trending_down,
-                      color: isIncome ? Colors.green : Colors.red,
-                      size: 20,
-                    ),
-                  ),
-                  title: Text(
-                    transaction['description'] ?? 'Transaction',
-                    style: const TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                  subtitle: Text(
-                    transaction['category'] ?? 'Other',
-                    style: TextStyle(color: Colors.grey[600]),
-                  ),
-                  trailing: Text(
-                    '${isIncome ? '+' : '-'}\$${amount.abs().toStringAsFixed(2)}',
-                    style: TextStyle(
-                      color: isIncome ? Colors.green : Colors.red,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+
 
   Widget _buildBudgetOverview() {
     return Container(
@@ -837,28 +870,28 @@ class _EnhancedDashboardState extends State<EnhancedDashboard>
 
   Widget _buildTransactions() {
     return Scaffold(
-      backgroundColor: Colors.grey[100],
+      backgroundColor: _isDarkMode ? Colors.grey[900] : Colors.grey[100],
       appBar: AppBar(
         title: const Text('Transactions'),
         backgroundColor: Colors.transparent,
         elevation: 0,
         actions: [
-          IconButton(
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => TransactionEntryScreen(
-                    userId: widget.userId,
-                    onTransactionAdded: () {
-                      fetchDashboardData();
-                    },
+                      IconButton(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => ManualTransactionEntryScreen(
+                      userId: widget.userId,
+                      onTransactionAdded: () {
+                        fetchDashboardData();
+                      },
+                    ),
                   ),
-                ),
-              );
-            },
-            icon: const Icon(Icons.add),
-          ),
+                );
+              },
+              icon: const Icon(Icons.add),
+            ),
         ],
       ),
       body: transactions.isEmpty
@@ -893,7 +926,7 @@ class _EnhancedDashboardState extends State<EnhancedDashboard>
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (context) => TransactionEntryScreen(
+                          builder: (context) => ManualTransactionEntryScreen(
                             userId: widget.userId,
                             onTransactionAdded: () {
                               fetchDashboardData();
@@ -966,7 +999,7 @@ class _EnhancedDashboardState extends State<EnhancedDashboard>
 
   Widget _buildAnalytics() {
     return Scaffold(
-      backgroundColor: Colors.grey[100],
+      backgroundColor: _isDarkMode ? Colors.grey[900] : Colors.grey[100],
       appBar: AppBar(
         title: const Text('Analytics'),
         backgroundColor: Colors.transparent,
@@ -1188,7 +1221,7 @@ class _EnhancedDashboardState extends State<EnhancedDashboard>
 
   Widget _buildGoals() {
     return Scaffold(
-      backgroundColor: Colors.grey[100],
+      backgroundColor: _isDarkMode ? Colors.grey[900] : Colors.grey[100],
       appBar: AppBar(
         title: const Text('Financial Goals'),
         backgroundColor: Colors.transparent,
@@ -1269,7 +1302,7 @@ class _EnhancedDashboardState extends State<EnhancedDashboard>
                   ),
                 ],
               ),
-            )).toList(),
+            )),
           ],
         ),
       ),
@@ -1278,7 +1311,7 @@ class _EnhancedDashboardState extends State<EnhancedDashboard>
 
   Widget _buildChatbot() {
     return Scaffold(
-      backgroundColor: Colors.grey[100],
+      backgroundColor: _isDarkMode ? Colors.grey[900] : Colors.grey[100],
       appBar: AppBar(
         title: const Text('Chatbot'),
         backgroundColor: Colors.transparent,
@@ -1410,13 +1443,11 @@ class _EnhancedDashboardState extends State<EnhancedDashboard>
         'isUser': true,
         'timestamp': DateTime.now(),
       });
-      _isTyping = true;
     });
 
     // Process the message and generate AI response
     Future.delayed(const Duration(seconds: 1), () {
       setState(() {
-        _isTyping = false;
         String response = _processUserMessage(text);
         chatMessages.add({
           'message': response,
@@ -1502,9 +1533,7 @@ class _EnhancedDashboardState extends State<EnhancedDashboard>
     }
     
     // Default response with suggestions
-    return 'I understand you said: "$message". I can help you with:\n\n' +
-           '💰 Track expenses: "I spent 50 dollars on food"\n' +
-           '💵 Add income: "I earned 1000 dollars"\n' +
+    return 'I understand you said: "$message". I can help you with:\n\n' '💰 Track expenses: "I spent 50 dollars on food"\n' '💵 Add income: "I earned 1000 dollars"\n' +
            '📊 Check balance: "What\'s my balance?"\n' +
            '🎯 Manage budget: "Add 100 to my budget"\n' +
            '🗑️ Remove expenses: "Remove 20 from expenses"\n' +
@@ -1549,10 +1578,8 @@ class _EnhancedDashboardState extends State<EnhancedDashboard>
       
       // Extract description from message
       String description = message;
-      if (amountMatch != null) {
-        description = description.replaceAll(amountMatch.group(1)!, '').trim();
-      }
-      
+      description = description.replaceAll(amountMatch.group(1)!, '').trim();
+          
       // Remove common income words to get the actual description
       List<String> incomeWords = ['earned', 'income', 'received', 'add', 'dollars', 'dollar'];
       for (String word in incomeWords) {
@@ -1617,7 +1644,7 @@ class _EnhancedDashboardState extends State<EnhancedDashboard>
         });
         
         String action = isAdding ? 'increased' : 'decreased';
-        return 'I\'ve ${action} your budget by \$${amount.toStringAsFixed(2)}. Your new budget is \$${(budgets[0]['budget'] as double).toStringAsFixed(2)}.';
+        return 'I\'ve $action your budget by \$${amount.toStringAsFixed(2)}. Your new budget is \$${(budgets[0]['budget'] as double).toStringAsFixed(2)}.';
       }
     }
     
@@ -1745,38 +1772,55 @@ class _EnhancedDashboardState extends State<EnhancedDashboard>
       forecast = 'Critical financial situation. Immediate action needed.';
     }
     
-    return '🌤️ Financial Weather Report:\n\n' +
-           'Current: $weather\n' +
-           'Forecast: $forecast\n\n' +
+    return '🌤️ Financial Weather Report:\n\n' 'Current: $weather\n' 'Forecast: $forecast\n\n' +
            'Balance: \$${balance.toStringAsFixed(2)}\n' +
            'Income: \$${income.toStringAsFixed(2)}\n' +
            'Expenses: \$${expenses.toStringAsFixed(2)}';
   }
 
   Widget _buildProfile() {
-    return Scaffold(
-      backgroundColor: Colors.grey[100],
-      appBar: AppBar(
-        title: const Text('Profile'),
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(30),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [Colors.blue[600]!, Colors.purple[600]!],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                borderRadius: BorderRadius.circular(20),
+    return Container(
+      color: _isDarkMode ? Colors.grey[900] : Colors.grey[100],
+      child: Column(
+        children: [
+          // Profile Header
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(30),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [Colors.blue[600]!, Colors.purple[600]!],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
               ),
+            ),
+            child: SafeArea(
               child: Column(
                 children: [
+                  Row(
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.arrow_back, color: Colors.white),
+                        onPressed: () {
+                          setState(() {
+                            _selectedIndex = 0; // Go back to dashboard
+                          });
+                        },
+                      ),
+                      const Spacer(),
+                      const Text(
+                        'Profile',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                      const Spacer(),
+                      const SizedBox(width: 48), // Balance the back button
+                    ],
+                  ),
+                  const SizedBox(height: 20),
                   CircleAvatar(
                     radius: 50,
                     backgroundColor: Colors.white.withValues(alpha: 0.2),
@@ -1808,16 +1852,34 @@ class _EnhancedDashboardState extends State<EnhancedDashboard>
                 ],
               ),
             ),
-            const SizedBox(height: 20),
-            _buildProfileOption(Icons.settings, 'Settings', () {}),
-            _buildProfileOption(Icons.security, 'Security', () {}),
-            _buildProfileOption(Icons.help, 'Help & Support', () {}),
-            _buildProfileOption(Icons.info, 'About', () {}),
-            _buildProfileOption(Icons.logout, 'Logout', () {
-              FirebaseAuth.instance.signOut();
-            }),
-          ],
-        ),
+          ),
+          // Profile Options
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                children: [
+                  _buildProfileOption(Icons.settings, 'Settings', () {}),
+                  _buildProfileOption(Icons.currency_exchange, 'Change Currency', () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const CurrencySelectionScreen(),
+                      ),
+                    );
+                  }),
+                  _buildProfileOption(Icons.security, 'Security', () {}),
+                  _buildProfileOption(Icons.help, 'Help & Support', () {}),
+                  _buildProfileOption(Icons.info, 'About', () {}),
+                  _buildDarkModeToggle(),
+                  _buildProfileOption(Icons.logout, 'Logout', () {
+                    FirebaseAuth.instance.signOut();
+                  }),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1826,7 +1888,7 @@ class _EnhancedDashboardState extends State<EnhancedDashboard>
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: _isDarkMode ? Colors.grey[800] : Colors.white,
         borderRadius: BorderRadius.circular(15),
         boxShadow: [
           BoxShadow(
@@ -1838,9 +1900,52 @@ class _EnhancedDashboardState extends State<EnhancedDashboard>
       ),
       child: ListTile(
         leading: Icon(icon, color: Colors.blue),
-        title: Text(title),
+        title: Text(
+          title,
+          style: TextStyle(
+            color: _isDarkMode ? Colors.white : Colors.black,
+          ),
+        ),
         trailing: const Icon(Icons.arrow_forward_ios, size: 16),
         onTap: onTap,
+      ),
+    );
+  }
+
+  Widget _buildDarkModeToggle() {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      decoration: BoxDecoration(
+        color: _isDarkMode ? Colors.grey[800] : Colors.white,
+        borderRadius: BorderRadius.circular(15),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.withValues(alpha: 0.1),
+            blurRadius: 5,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: ListTile(
+        leading: Icon(
+          _isDarkMode ? Icons.dark_mode : Icons.light_mode,
+          color: _isDarkMode ? Colors.amber : Colors.blue,
+        ),
+        title: Text(
+          'Dark Mode',
+          style: TextStyle(
+            color: _isDarkMode ? Colors.white : Colors.black,
+          ),
+        ),
+        trailing: Switch(
+          value: _isDarkMode,
+          onChanged: (value) {
+            setState(() {
+              _isDarkMode = value;
+            });
+          },
+          activeColor: Colors.amber,
+        ),
       ),
     );
   }
@@ -1848,7 +1953,7 @@ class _EnhancedDashboardState extends State<EnhancedDashboard>
   Widget _buildBottomNavigationBar() {
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: _isDarkMode ? Colors.grey[800] : Colors.white,
         boxShadow: [
           BoxShadow(
             color: Colors.grey.withValues(alpha: 0.1),
@@ -1857,12 +1962,20 @@ class _EnhancedDashboardState extends State<EnhancedDashboard>
           ),
         ],
       ),
-      child: BottomNavigationBar(
-        type: BottomNavigationBarType.fixed,
-        currentIndex: _selectedIndex,
-        onTap: _onItemTapped,
-        selectedItemColor: Colors.blue,
-        unselectedItemColor: Colors.grey,
+              child: BottomNavigationBar(
+          type: BottomNavigationBarType.fixed,
+          currentIndex: _selectedIndex,
+          onTap: _onItemTapped,
+          selectedItemColor: Colors.blue,
+          unselectedItemColor: Colors.grey[600],
+          backgroundColor: _isDarkMode ? Colors.grey[800] : Colors.white,
+          selectedLabelStyle: const TextStyle(
+            fontWeight: FontWeight.bold,
+            fontSize: 12,
+          ),
+          unselectedLabelStyle: const TextStyle(
+            fontSize: 12,
+          ),
         items: const [
           BottomNavigationBarItem(
             icon: Icon(Icons.dashboard),
@@ -1884,11 +1997,42 @@ class _EnhancedDashboardState extends State<EnhancedDashboard>
             icon: Icon(Icons.chat_bubble),
             label: 'AI Chat',
           ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.person),
-            label: 'Profile',
-          ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildNavItem(IconData icon, String label, int index) {
+    bool isSelected = _selectedIndex == index;
+    return GestureDetector(
+      onTap: () => _onItemTapped(index),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: BoxDecoration(
+          color: isSelected 
+              ? Colors.blue.withValues(alpha: 0.1)
+              : Colors.transparent,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              color: isSelected ? Colors.blue : Colors.grey[600],
+              size: 24,
+            ),
+            const SizedBox(height: 4),
+            Text(
+              label,
+              style: TextStyle(
+                color: isSelected ? Colors.blue : Colors.grey[600],
+                fontSize: 12,
+                fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

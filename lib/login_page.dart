@@ -865,6 +865,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
                                ],
                              ),
                             const SizedBox(height: 16),
+                            
                             Text(
                               isLogin ? "Welcome Back" : "Create Account",
                               style: const TextStyle(
