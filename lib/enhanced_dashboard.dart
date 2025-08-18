@@ -265,9 +265,38 @@ class _EnhancedDashboardState extends State<EnhancedDashboard>
   }
 
   void _onItemTapped(int index) {
-    setState(() {
-      _selectedIndex = index;
-    });
+    // Ensure index is within valid range (0-4 for 5 navigation items)
+    if (index >= 0 && index < 5) {
+      setState(() {
+        _selectedIndex = index;
+      });
+    }
+  }
+
+  void _showProfile() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.9,
+        minChildSize: 0.5,
+        maxChildSize: 0.95,
+        builder: (context, scrollController) => Container(
+          decoration: BoxDecoration(
+            color: _isDarkMode ? Colors.grey[900] : Colors.white,
+            borderRadius: const BorderRadius.only(
+              topLeft: Radius.circular(25),
+              topRight: Radius.circular(25),
+            ),
+          ),
+          child: SingleChildScrollView(
+            controller: scrollController,
+            child: _buildProfile(),
+          ),
+        ),
+      ),
+    );
   }
 
   // Helper method to get the correct screen based on index
@@ -283,8 +312,6 @@ class _EnhancedDashboardState extends State<EnhancedDashboard>
         return _buildGoals();
       case 4:
         return _buildChatbot();
-      case 5:
-        return _buildProfile();
       default:
         return _buildDashboard();
     }
@@ -362,13 +389,15 @@ class _EnhancedDashboardState extends State<EnhancedDashboard>
                 GestureDetector(
                   onTap: () {
                     setState(() {
-                      _selectedIndex = 5; // Profile index
+                      // Don't use bottom nav index for profile
+                      // Show profile directly instead
+                      _showProfile();
                     });
                   },
                     child: Container(
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.2),
+                        color: Colors.white.withOpacity(0.2),
                         borderRadius: BorderRadius.circular(15),
                       ),
                       child: const Icon(
@@ -385,7 +414,7 @@ class _EnhancedDashboardState extends State<EnhancedDashboard>
                       Text(
                         'Welcome back,',
                         style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.8),
+                          color: Colors.white.withOpacity(0.8),
                           fontSize: 16,
                         ),
                       ),
@@ -409,7 +438,7 @@ class _EnhancedDashboardState extends State<EnhancedDashboard>
                     child: Container(
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.2),
+                        color: Colors.white.withOpacity(0.2),
                         borderRadius: BorderRadius.circular(15),
                       ),
                       child: const Icon(
@@ -442,7 +471,7 @@ class _EnhancedDashboardState extends State<EnhancedDashboard>
           borderRadius: BorderRadius.circular(25),
           boxShadow: [
             BoxShadow(
-              color: Colors.green.withValues(alpha: 0.3),
+              color: Colors.green.withOpacity(0.3),
               blurRadius: 20,
               offset: const Offset(0, 10),
             ),
@@ -634,7 +663,7 @@ class _EnhancedDashboardState extends State<EnhancedDashboard>
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: Colors.grey.withValues(alpha: 0.1),
+            color: Colors.grey.withOpacity(0.1),
             blurRadius: 10,
             offset: const Offset(0, 5),
           ),
@@ -700,7 +729,7 @@ class _EnhancedDashboardState extends State<EnhancedDashboard>
                     borderRadius: BorderRadius.circular(20),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.grey.withValues(alpha: 0.1),
+                        color: Colors.grey.withOpacity(0.1),
                         blurRadius: 10,
                         offset: const Offset(0, 5),
                       ),
@@ -789,7 +818,7 @@ class _EnhancedDashboardState extends State<EnhancedDashboard>
               borderRadius: BorderRadius.circular(20),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.grey.withValues(alpha: 0.1),
+                  color: Colors.grey.withOpacity(0.1),
                   blurRadius: 10,
                   offset: const Offset(0, 5),
                 ),
@@ -1533,9 +1562,7 @@ class _EnhancedDashboardState extends State<EnhancedDashboard>
     }
     
     // Default response with suggestions
-    return 'I understand you said: "$message". I can help you with:\n\n' '💰 Track expenses: "I spent 50 dollars on food"\n' '💵 Add income: "I earned 1000 dollars"\n' +
-           '📊 Check balance: "What\'s my balance?"\n' +
-           '🎯 Manage budget: "Add 100 to my budget"\n' +
+    return 'I understand you said: "$message". I can help you with:\n\n' '💰 Track expenses: "I spent 50 dollars on food"\n' '💵 Add income: "I earned 1000 dollars"\n' '📊 Check balance: "What\'s my balance?"\n' '🎯 Manage budget: "Add 100 to my budget"\n' +
            '🗑️ Remove expenses: "Remove 20 from expenses"\n' +
            '📈 Get advice: "Give me financial advice"\n' +
            '🌤️ Financial forecast: "What\'s my financial weather?"\n\n' +
@@ -1772,9 +1799,7 @@ class _EnhancedDashboardState extends State<EnhancedDashboard>
       forecast = 'Critical financial situation. Immediate action needed.';
     }
     
-    return '🌤️ Financial Weather Report:\n\n' 'Current: $weather\n' 'Forecast: $forecast\n\n' +
-           'Balance: \$${balance.toStringAsFixed(2)}\n' +
-           'Income: \$${income.toStringAsFixed(2)}\n' +
+    return '🌤️ Financial Weather Report:\n\n' 'Current: $weather\n' 'Forecast: $forecast\n\n' 'Balance: \$${balance.toStringAsFixed(2)}\n' 'Income: \$${income.toStringAsFixed(2)}\n' +
            'Expenses: \$${expenses.toStringAsFixed(2)}';
   }
 
@@ -1823,7 +1848,7 @@ class _EnhancedDashboardState extends State<EnhancedDashboard>
                   const SizedBox(height: 20),
                   CircleAvatar(
                     radius: 50,
-                    backgroundColor: Colors.white.withValues(alpha: 0.2),
+                    backgroundColor: Colors.white.withOpacity(0.2),
                     child: Text(
                       widget.userName[0].toUpperCase(),
                       style: const TextStyle(
@@ -1846,7 +1871,7 @@ class _EnhancedDashboardState extends State<EnhancedDashboard>
                     'Financial Tracker',
                     style: TextStyle(
                       fontSize: 16,
-                      color: Colors.white.withValues(alpha: 0.8),
+                      color: Colors.white.withOpacity(0.8),
                     ),
                   ),
                 ],
@@ -2010,7 +2035,7 @@ class _EnhancedDashboardState extends State<EnhancedDashboard>
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         decoration: BoxDecoration(
           color: isSelected 
-              ? Colors.blue.withValues(alpha: 0.1)
+              ? Colors.blue.withOpacity(0.1)
               : Colors.transparent,
           borderRadius: BorderRadius.circular(12),
         ),

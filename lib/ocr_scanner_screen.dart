@@ -643,29 +643,30 @@ class _OCRScannerScreenState extends State<OCRScannerScreen>
       return Container(
         color: Colors.grey[900],
         child: const Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                Icons.camera_alt,
-                size: 64,
-                color: Colors.white54,
-              ),
-              SizedBox(height: 16),
-              Text(
-                'Camera not available',
-                style: TextStyle(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  Icons.camera_alt,
+                  size: 64,
                   color: Colors.white54,
-                  fontSize: 16,
                 ),
-              ),
-            ],
+                SizedBox(height: 16),
+                Text(
+                  'Camera not available',
+                  style: TextStyle(
+                    color: Colors.white54,
+                    fontSize: 16,
+                  ),
+                ),
+              ],
+            ),
           ),
-        ),
       );
     }
 
     return Stack(
+      fit: StackFit.expand,
       children: [
         CameraPreview(_cameraController!),
         if (_isScanning)

@@ -42,6 +42,11 @@ dependencies:
   font_awesome_flutter: ^10.9.0
   speech_to_text: ^6.6.0
   permission_handler: ^11.1.0
+  camera: ^0.10.5+9
+  image_picker: ^1.0.7
+  google_ml_kit: ^0.16.3
+  path_provider: ^2.1.2
+  path: ^1.8.3
 
 dev_dependencies:
   flutter_test:
